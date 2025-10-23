@@ -281,7 +281,7 @@ func sendDHCPDiscover(interfaceName string) error {
 	}
 
 	// 如果无法获取MAC地址，使用随机MAC
-	if hardwareAddr == nil || len(hardwareAddr) == 0 {
+	if len(hardwareAddr) == 0 {
 		hardwareAddr = net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}
 	}
 
@@ -508,7 +508,7 @@ func main() {
 	})
 
 	// 布局
-	content := container.NewVBox(
+	topContent := container.NewVBox(
 		container.NewHBox(title, layout.NewSpacer()),
 		container.NewGridWithColumns(2,
 			widget.NewLabel("选择网络接口:"),
@@ -516,10 +516,18 @@ func main() {
 		),
 		scanBtn,
 		widget.NewLabel("发现的DHCP服务器:"),
-		container.NewVBox(
-			container.New(layout.NewMaxLayout(), appState.resultTable),
-		),
-		container.NewHBox(layout.NewSpacer(), appState.statusLabel),
+	)
+
+	// 使表格占据窗口的大部分空间
+	tableContainer := container.New(layout.NewMaxLayout(), appState.resultTable)
+
+	// 底部状态栏
+	bottomContent := container.NewHBox(layout.NewSpacer(), appState.statusLabel)
+
+	// 使用BorderLayout让表格自动填充中间区域
+	content := container.New(layout.NewBorderLayout(
+		topContent, bottomContent, nil, nil),
+		topContent, tableContainer, bottomContent,
 	)
 
 	w.SetContent(content)
