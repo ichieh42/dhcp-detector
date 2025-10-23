@@ -63,31 +63,39 @@ func getNetworkInterfaces() []NetworkInterface {
 	var interfaces []NetworkInterface
 	for _, device := range devices {
 		// 过滤掉不活跃
-		if device.Description != "" && !strings.Contains(device.Description, "Loopback") {
-			// 获取IP地址信息
-			ipInfo := ""
-			for _, address := range device.Addresses {
-				ipInfo += fmt.Sprintf("%s/%s, ", address.IP.String(), address.Netmask.String())
-			}
-			if ipInfo != "" {
-				ipInfo = ipInfo[:len(ipInfo)-2] // 移除最后的逗号和空格
-			}
-
-			// 过滤掉没有IP地址的接口
-			if ipInfo == "" {
-				continue
-			}
-
-			// 创建显示名称
-			displayName := fmt.Sprintf("%s [%s]", device.Description, ipInfo)
-
-			interfaces = append(interfaces, NetworkInterface{
-				Name:        device.Name,
-				Description: device.Description,
-				IPAddresses: ipInfo,
-				DisplayName: displayName,
-			})
+		if device.Description == "" {
+			continue
 		}
+
+		// 过滤掉回环接口，注意大小写不敏感
+		if strings.Contains(strings.ToLower(device.Description), "loopback") {
+			continue
+		}
+
+		// 获取IP地址信息
+		ipInfo := ""
+		for _, address := range device.Addresses {
+			ipInfo += fmt.Sprintf("%s/%s, ", address.IP.String(), address.Netmask.String())
+		}
+		if ipInfo != "" {
+			ipInfo = ipInfo[:len(ipInfo)-2] // 移除最后的逗号和空格
+		}
+
+		// 过滤掉没有IP地址的接口
+		if ipInfo == "" {
+			continue
+		}
+
+		// 创建显示名称
+		displayName := fmt.Sprintf("%s [%s]", device.Description, ipInfo)
+
+		interfaces = append(interfaces, NetworkInterface{
+			Name:        device.Name,
+			Description: device.Description,
+			IPAddresses: ipInfo,
+			DisplayName: displayName,
+		})
+
 	}
 	return interfaces
 }
