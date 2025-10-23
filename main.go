@@ -395,7 +395,7 @@ func main() {
 	// 结果表格
 	appState.resultTable = widget.NewTable(
 		func() (int, int) {
-			return len(appState.dhcpServers) + 1, 4 // 标题行 + 数据行, 4列
+			return len(appState.dhcpServers) + 1, 3 // 标题行 + 数据行, 3列
 		},
 		func() fyne.CanvasObject {
 			return widget.NewLabel("数据")
@@ -411,8 +411,6 @@ func main() {
 				case 1:
 					label.SetText("MAC地址")
 				case 2:
-					label.SetText("网络接口")
-				case 3:
 					label.SetText("发现时间")
 				}
 				label.TextStyle = fyne.TextStyle{Bold: true}
@@ -434,8 +432,6 @@ func main() {
 				case 1:
 					label.SetText(server.MAC)
 				case 2:
-					label.SetText(server.Interface)
-				case 3:
 					label.SetText(server.Timestamp.Format("15:04:05"))
 				}
 			} else {
@@ -448,7 +444,6 @@ func main() {
 	appState.resultTable.SetColumnWidth(0, 120)
 	appState.resultTable.SetColumnWidth(1, 150)
 	appState.resultTable.SetColumnWidth(2, 100)
-	appState.resultTable.SetColumnWidth(3, 100)
 
 	// 扫描按钮
 	scanBtn = widget.NewButton("开始扫描", func() {
