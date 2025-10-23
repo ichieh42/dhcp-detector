@@ -356,8 +356,6 @@ func main() {
 	w.Resize(fyne.NewSize(600, 400))
 
 	// 创建界面元素
-	title := widget.NewLabel("内网DHCP服务检测工具")
-	title.TextStyle = fyne.TextStyle{Bold: true}
 
 	// 获取网络接口信息
 	interfaces := getNetworkInterfaces()
@@ -509,7 +507,6 @@ func main() {
 
 	// 布局
 	topContent := container.NewVBox(
-		container.NewHBox(title, layout.NewSpacer()),
 		container.NewGridWithColumns(2,
 			widget.NewLabel("选择网络接口:"),
 			interfaceSelect,
@@ -519,7 +516,7 @@ func main() {
 	)
 
 	// 使表格占据窗口的大部分空间
-	tableContainer := container.New(layout.NewMaxLayout(), appState.resultTable)
+	tableContainer := container.New(layout.NewStackLayout(), appState.resultTable)
 
 	// 底部状态栏
 	bottomContent := container.NewHBox(layout.NewSpacer(), appState.statusLabel)
