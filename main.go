@@ -73,6 +73,11 @@ func getNetworkInterfaces() []NetworkInterface {
 				ipInfo = ipInfo[:len(ipInfo)-2] // 移除最后的逗号和空格
 			}
 
+			// 过滤掉没有IP地址的接口
+			if ipInfo == "" {
+				continue
+			}
+
 			// 创建显示名称
 			displayName := fmt.Sprintf("%s [%s]", device.Description, ipInfo)
 
