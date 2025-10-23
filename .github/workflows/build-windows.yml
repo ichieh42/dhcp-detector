@@ -1,0 +1,49 @@
+name: Build Windows EXE on Tag
+
+# 触发条件：当推送以 v 开头的 tag 时触发，例如 v1.0.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 用于创建 Release
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史记录，便于 tag 信息
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'  # 指定 Go 版本，根据项目调整；fyne-cross 需要 Go 1.13+
+
+    - name: Install fyne-cross
+      run: |
+        go install github.com/fyne-io/fyne-cross@latest
+
+    - name: Build Windows EXE with fyne-cross
+      run: |
+        # 构建 Windows AMD64 EXE，假设项目入口在根目录（.），根据实际情况调整路径
+        fyne-cross windows -arch=amd64 -output=dhcp-detector.exe .
+
+    - name: Verify build output (Debug)
+      run: |
+        echo "Files in current directory:"
+        tree .
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: fyne-cross/bin/windows-amd64/dhcp-detector.exe
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
