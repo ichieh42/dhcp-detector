@@ -62,8 +62,8 @@ func getNetworkInterfaces() []NetworkInterface {
 
 	var interfaces []NetworkInterface
 	for _, device := range devices {
-		// 过滤掉不活跃或虚拟接口
-		if device.Description != "" && !strings.Contains(device.Description, "Loopback") && !strings.Contains(device.Description, "VMware") {
+		// 过滤掉不活跃
+		if device.Description != "" && !strings.Contains(device.Description, "Loopback") {
 			// 获取IP地址信息
 			ipInfo := ""
 			for _, address := range device.Addresses {
