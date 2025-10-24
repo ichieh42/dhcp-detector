@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log"
 	"net"
@@ -108,20 +109,28 @@ func scanDHCPServers(interfaceName string, resultChan chan<- DHCPServer, stopCha
 	}
 	defer handle.Close()
 
-	// 设置过滤器只捕获DHCP包
-	err = handle.SetBPFFilter("udp and (port 67 or port 68)")
+	// 设置过滤器只捕获DHCPv4和DHCPv6包
+	err = handle.SetBPFFilter("udp and (port 67 or port 68 or port 546 or port 547)")
 	if err != nil {
 		return err
 	}
 
-	// 先发送DHCP请求包
-	log.Printf("正在发送DHCP发现请求...")
+	// 先发送DHCPv4和DHCPv6请求包
+	log.Printf("正在发送DHCPv4发现请求...")
 	err = sendDHCPDiscover(interfaceName)
 	if err != nil {
-		log.Printf("发送DHCP发现请求失败: %v", err)
+		log.Printf("发送DHCPv4发现请求失败: %v", err)
 		// 即使发送失败，我们仍然尝试捕获可能存在的DHCP服务器响应
 	} else {
-		log.Printf("DHCP发现请求已发送，等待响应...")
+		log.Printf("DHCPv4发现请求已发送，等待响应...")
+	}
+
+	log.Printf("正在发送DHCPv6 Solicitate 请求...")
+	err = sendDHCPv6Solicit(interfaceName)
+	if err != nil {
+		log.Printf("发送DHCPv6 Solicitate 请求失败: %v", err)
+	} else {
+		log.Printf("DHCPv6 Solicitate 请求已发送，等待响应...")
 	}
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
@@ -153,103 +162,141 @@ func scanDHCPServers(interfaceName string, resultChan chan<- DHCPServer, stopCha
 				// 打印UDP包信息用于调试
 				log.Printf("收到UDP包，源端口: %v, 目标端口: %v", udp.SrcPort, udp.DstPort)
 
-				// 确认是从DHCP服务器端口(67)发出的响应包
-				if !(udp.SrcPort == 67 && udp.DstPort == 68) {
-					log.Printf("忽略非67-68端口的UDP包")
-					continue
-				}
-
-				// 尝试解析DHCP层
-				dhcpLayer := packet.Layer(layers.LayerTypeDHCPv4)
-				if dhcpLayer == nil {
-					// 如果没有直接解析到DHCP层，尝试从应用层数据中解析
-					applicationLayer := packet.ApplicationLayer()
-					if applicationLayer != nil {
-						// 打印调试信息
-						log.Printf("收到可能的DHCP包，尝试手动解析")
-
-						// 这里可以添加手动解析DHCP包的逻辑
-						// 但为了简单起见，我们先尝试使用标准解析
-					}
-					log.Printf("无法解析应用层数据为DHCP包")
-					continue
-				}
-
-				dhcp, ok := dhcpLayer.(*layers.DHCPv4)
-				if !ok || dhcp == nil {
-					log.Printf("无法解析DHCP层")
-					continue
-				}
-
-				log.Printf("收到DHCP包，操作: %v, 硬件类型: %v, 硬件地址: %v, 客户端IP: %v",
-					dhcp.Operation, dhcp.HardwareType, dhcp.ClientHWAddr, dhcp.ClientIP)
-
-				// 检查是否是DHCP Offer或DHCP ACK
-				if dhcp.Operation == layers.DHCPOpReply {
-					// 打印调试信息
-					log.Printf("检测到DHCP回复")
-
-					// 获取服务器IP地址
-					var serverIP string
-
-					// 首先尝试从DHCPOptServerID选项获取
-					for _, opt := range dhcp.Options {
-						if opt.Type == layers.DHCPOptServerID {
-							serverIP = net.IP(opt.Data).String()
-							log.Printf("从DHCPOptServerID获取服务器IP: %s", serverIP)
-							break
+				// 检查是DHCPv4还是DHCPv6响应包
+				if udp.SrcPort == 67 && udp.DstPort == 68 {
+					// 处理DHCPv4
+					// 尝试解析DHCPv4层
+					dhcpLayer := packet.Layer(layers.LayerTypeDHCPv4)
+					if dhcpLayer == nil {
+						applicationLayer := packet.ApplicationLayer()
+						if applicationLayer != nil {
+							log.Printf("收到可能的DHCPv4包，尝试手动解析")
 						}
+						log.Printf("无法解析应用层数据为DHCPv4包")
+						continue
 					}
 
-					// 如果没有找到，尝试从NextServerIP字段获取
-					if serverIP == "" && dhcp.NextServerIP != nil && len(dhcp.NextServerIP) > 0 {
-						serverIP = dhcp.NextServerIP.String()
-						log.Printf("从NextServerIP获取服务器IP: %s", serverIP)
+					dhcp, ok := dhcpLayer.(*layers.DHCPv4)
+					if !ok || dhcp == nil {
+						log.Printf("无法解析DHCPv4层")
+						continue
 					}
 
-					// 如果仍然没有找到，尝试从IP层获取源IP
-					if serverIP == "" {
-						ipLayer := packet.Layer(layers.LayerTypeIPv4)
-						if ipLayer != nil {
-							ip, ok := ipLayer.(*layers.IPv4)
-							if ok && ip != nil {
-								serverIP = ip.SrcIP.String()
-								log.Printf("从IP层获取服务器IP: %s", serverIP)
+					log.Printf("收到DHCPv4包，操作: %v, 硬件类型: %v, 硬件地址: %v, 客户端IP: %v",
+						dhcp.Operation, dhcp.HardwareType, dhcp.ClientHWAddr, dhcp.ClientIP)
+
+					// 检查是否是DHCP Offer或DHCP ACK
+					if dhcp.Operation == layers.DHCPOpReply {
+						log.Printf("检测到DHCPv4回复")
+
+						// 获取服务器IP地址
+						var serverIP string
+
+						for _, opt := range dhcp.Options {
+							if opt.Type == layers.DHCPOptServerID {
+								serverIP = net.IP(opt.Data).String()
+								log.Printf("从DHCPOptServerID获取服务器IP: %s", serverIP)
+								break
+							}
+						}
+
+						if serverIP == "" && dhcp.NextServerIP != nil && len(dhcp.NextServerIP) > 0 {
+							serverIP = dhcp.NextServerIP.String()
+							log.Printf("从NextServerIP获取服务器IP: %s", serverIP)
+						}
+
+						if serverIP == "" {
+							ipLayer := packet.Layer(layers.LayerTypeIPv4)
+							if ipLayer != nil {
+								ip, ok := ipLayer.(*layers.IPv4)
+								if ok && ip != nil {
+									serverIP = ip.SrcIP.String()
+									log.Printf("从IP层获取服务器IP: %s", serverIP)
+								}
+							}
+						}
+
+						if serverIP != "" {
+							ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+							var serverMAC string
+							if ethernetLayer != nil {
+								ethernet, _ := ethernetLayer.(*layers.Ethernet)
+								serverMAC = ethernet.SrcMAC.String()
+							}
+
+							resultChan <- DHCPServer{
+								IP:        serverIP,
+								MAC:       serverMAC,
+								Interface: interfaceName,
+								Timestamp: time.Now(),
 							}
 						}
 					}
+				} else if udp.SrcPort == 547 && udp.DstPort == 546 {
+					// 处理DHCPv6响应
+					dhcp6Layer := packet.Layer(layers.LayerTypeDHCPv6)
+					if dhcp6Layer == nil {
+						log.Printf("无法解析为DHCPv6包")
+						continue
+					}
+					dhcp6, ok := dhcp6Layer.(*layers.DHCPv6)
+					if !ok || dhcp6 == nil {
+						log.Printf("无法解析DHCPv6层")
+						continue
+					}
 
-					if serverIP != "" {
-						// 获取MAC地址
-						ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
-						var serverMAC string
-						if ethernetLayer != nil {
-							ethernet, _ := ethernetLayer.(*layers.Ethernet)
-							serverMAC = ethernet.SrcMAC.String()
+					log.Printf("收到DHCPv6包，类型: %v", dhcp6.MsgType)
+					// 2: Advertise, 7: Reply
+					if dhcp6.MsgType == 2 || dhcp6.MsgType == 7 {
+						var serverIP string
+						ip6Layer := packet.Layer(layers.LayerTypeIPv6)
+						if ip6Layer != nil {
+							ip6, ok := ip6Layer.(*layers.IPv6)
+							if ok && ip6 != nil {
+								serverIP = ip6.SrcIP.String()
+							}
 						}
 
-						// 发送结果
-						resultChan <- DHCPServer{
-							IP:        serverIP,
-							MAC:       serverMAC,
-							Interface: interfaceName,
-							Timestamp: time.Now(),
+						if serverIP != "" {
+							ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+							var serverMAC string
+							if ethernetLayer != nil {
+								ethernet, _ := ethernetLayer.(*layers.Ethernet)
+								serverMAC = ethernet.SrcMAC.String()
+							}
+							resultChan <- DHCPServer{
+								IP:        serverIP,
+								MAC:       serverMAC,
+								Interface: interfaceName,
+								Timestamp: time.Now(),
+							}
 						}
 					}
+				} else {
+					// 非DHCPv4/6响应端口，忽略
+					continue
 				}
 			}
 		}
 	}()
 
 	// 添加调试日志
-	log.Printf("开始在接口 %s 上扫描DHCP服务器", interfaceName)
+	log.Printf("开始在接口 %s 上扫描DHCP服务器 (IPv4/IPv6)", interfaceName)
 
-	// 发送DHCP发现包
+	// 发送DHCPv4发现包
 	err = sendDHCPDiscover(interfaceName)
 	if err != nil {
-		log.Printf("发送DHCP发现包错误: %v", err)
+		log.Printf("发送DHCPv4发现包错误: %v", err)
 	} else {
-		log.Printf("已发送DHCP发现包")
+		log.Printf("已发送DHCPv4发现包")
+	}
+
+	// 发送DHCPv6 Solicitate
+	err = sendDHCPv6Solicit(interfaceName)
+	if err != nil {
+		log.Printf("发送DHCPv6 Solicitate 错误: %v", err)
+	} else {
+		log.Printf("已发送DHCPv6 Solicitate")
 	}
 
 	return nil
@@ -537,4 +584,73 @@ func main() {
 
 	w.SetContent(content)
 	w.ShowAndRun()
+}
+
+func sendDHCPv6Solicit(interfaceName string) error {
+	// 在Windows上，interfaceName已经是pcap设备名称
+	devices, err := pcap.FindAllDevs()
+	if err != nil {
+		return fmt.Errorf("查找网络设备错误: %v", err)
+	}
+
+	var hardwareAddr net.HardwareAddr
+	for _, device := range devices {
+		if device.Name == interfaceName {
+			interfaces, _ := net.Interfaces()
+			for _, iface := range interfaces {
+				// 尝试匹配描述以获取MAC（简单方式）
+				if strings.Contains(strings.ToLower(device.Description), strings.ToLower(iface.Name)) {
+					hardwareAddr = iface.HardwareAddr
+					break
+				}
+			}
+			break
+		}
+	}
+	if len(hardwareAddr) == 0 {
+		// 如果无法获取MAC地址，使用随机MAC
+		hardwareAddr = net.HardwareAddr{0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee}
+	}
+
+	handle, err := pcap.OpenLive(interfaceName, 65536, true, pcap.BlockForever)
+	if err != nil {
+		return fmt.Errorf("打开网络适配器错误(IPv6): %v", err)
+	}
+	defer handle.Close()
+
+	eth := layers.Ethernet{
+		SrcMAC:       hardwareAddr,
+		DstMAC:       net.HardwareAddr{0x33, 0x33, 0x00, 0x01, 0x00, 0x02}, // ff02::1:2 的组播MAC
+		EthernetType: layers.EthernetTypeIPv6,
+	}
+
+	ip6 := layers.IPv6{
+		Version:  6,
+		HopLimit: 255,
+		SrcIP:    net.ParseIP("::"),
+		DstIP:    net.ParseIP("ff02::1:2"), // 所有DHCPv6服务器与中继的组播地址
+	}
+
+	udp := layers.UDP{
+		SrcPort: 546,
+		DstPort: 547,
+	}
+	udp.SetNetworkLayerForChecksum(&ip6)
+
+	txid := make([]byte, 3)
+	_, _ = rand.Read(txid)
+	dhcp6 := layers.DHCPv6{
+		MsgType:       1, // Solicit
+		TransactionID: txid,
+	}
+	// 可选：请求一些常见选项(例如DNS服务器)
+	// dhcp6.Options = append(dhcp6.Options, layers.DHCPv6Option{Code: layers.DHCPv6OptOro, Value: []byte{0x00, 0x17}})
+
+	buffer := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{ComputeChecksums: true, FixLengths: true}
+	if err := gopacket.SerializeLayers(buffer, opts, &eth, &ip6, &udp, &dhcp6); err != nil {
+		return err
+	}
+
+	return handle.WritePacketData(buffer.Bytes())
 }
