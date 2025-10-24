@@ -190,7 +190,7 @@ func findDHCPv4ServerIP(packet gopacket.Packet, dhcp *layers.DHCPv4) string {
 			return net.IP(opt.Data).String()
 		}
 	}
-	if dhcp.NextServerIP != nil && len(dhcp.NextServerIP) > 0 {
+	if len(dhcp.NextServerIP) > 0 {
 		return dhcp.NextServerIP.String()
 	}
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
